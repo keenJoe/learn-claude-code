@@ -1,4 +1,5 @@
 import os
+import subprocess
 from anthropic import Anthropic
 
 api_key="sk-d5918a97d7e6aec660557fbb6049a1c84a91283784b7a4abbbcb4dd291e2aa1c"
@@ -35,22 +36,36 @@ if __name__ == "__main__":
     messages = []
     messages.append({"role": "user", "content": "hello"})
 
-    response = client.messages.create(
-            model=MODEL, system=SYSTEM, messages=messages,
-            tools=TOOLS, max_tokens=8000,
-        )
+    while True:
+        response = client.messages.create(
+                model=MODEL, system=SYSTEM, messages=messages,
+                tools=TOOLS, max_tokens=8000,
+            )
 
-    # # Append assistant turn
-    # messages.append({"role": "assistant", "content": response.content})
+        # # Append assistant turn
+        messages.append({"role": "assistant", "content": response.content})
 
-    print(response.content)
+        results = []
+        for block in response.content:
+            # if block.type == "text":
+            #     print(block.text)
+            # elif block.type == "tool_use":
+            #     print(block.name, block.input)   # input 是 dict，如 {"command": "ls"}
 
-    for block in response.content:
-        if block.type == "text":
-            print(block.text)
-        elif block.type == "tool_use":
-            print(block.name, block.input)   # input 是 dict，如 {"command": "ls"}
+            if block.type != "tool_use":
+                print(block.text)
+                continue
 
-    print(response.stop_reason)
+            out = subprocess.run(block.input["command"], shell=True,
+                                 capture_output=True, text=True)
+            results.append({
+                "type": "tool_result",
+                "tool_use_id": block.id,
+                "content": out.stdout or out.stderr,
+            })
 
-    pass
+        messages.append({"role": "user", "content": results})   # 结果是 user 角色
+
+        # print(response.content)
+        if response.stop_reason != "tool_use":
+            break
